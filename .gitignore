@@ -21,12 +21,21 @@ env/
 !.env.example
 
 # Local app data
-data/
+data/*
+!data/food/
+!data/food/foods.csv
+!data/documents/
+!data/documents/curated_guides/
+!data/documents/curated_guides/*.md
+documentsource/
 *.db
 *.sqlite
 *.sqlite3
 
 # RAG/vector-store artifacts
+data/chroma/
+data/uploads/
+data/runtime/
 chroma/
 *.index
 *.faiss
