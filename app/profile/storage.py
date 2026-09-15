@@ -47,6 +47,8 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
             sex TEXT NOT NULL,
             goal TEXT NOT NULL,
             injuries TEXT NOT NULL,
+            medical_conditions TEXT NOT NULL DEFAULT '[]',
+            medications TEXT NOT NULL DEFAULT '[]',
             diet_preferences TEXT NOT NULL,
             training_conditions TEXT NOT NULL,
             activity_level TEXT NOT NULL,
@@ -55,6 +57,17 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    existing_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(user_profiles)")
+    }
+    if "medical_conditions" not in existing_columns:
+        connection.execute(
+            "ALTER TABLE user_profiles ADD COLUMN medical_conditions TEXT NOT NULL DEFAULT '[]'"
+        )
+    if "medications" not in existing_columns:
+        connection.execute(
+            "ALTER TABLE user_profiles ADD COLUMN medications TEXT NOT NULL DEFAULT '[]'"
+        )
     connection.commit()
 
 
@@ -63,9 +76,20 @@ def _profile_to_row(profile: UserProfile) -> dict[str, Any]:
     return {
         **data,
         "injuries": json.dumps(data["injuries"], ensure_ascii=False),
+        "medical_conditions": json.dumps(data["medical_conditions"], ensure_ascii=False),
+        "medications": json.dumps(data["medications"], ensure_ascii=False),
         "diet_preferences": json.dumps(data["diet_preferences"], ensure_ascii=False),
         "training_conditions": json.dumps(data["training_conditions"], ensure_ascii=False),
     }
+
+
+def _loads_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    parsed_value = json.loads(value)
+    if not isinstance(parsed_value, list):
+        return []
+    return parsed_value
 
 
 def _row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
@@ -78,9 +102,11 @@ def _row_to_profile(row: sqlite3.Row) -> dict[str, Any]:
         "age": data["age"],
         "sex": data["sex"],
         "goal": data["goal"],
-        "injuries": json.loads(data["injuries"]),
-        "diet_preferences": json.loads(data["diet_preferences"]),
-        "training_conditions": json.loads(data["training_conditions"]),
+        "injuries": _loads_list(data.get("injuries")),
+        "medical_conditions": _loads_list(data.get("medical_conditions")),
+        "medications": _loads_list(data.get("medications")),
+        "diet_preferences": _loads_list(data.get("diet_preferences")),
+        "training_conditions": _loads_list(data.get("training_conditions")),
         "activity_level": data["activity_level"],
     }
     return UserProfile.model_validate(profile_data).model_dump()
@@ -122,6 +148,8 @@ def create_user_profile(
                     sex,
                     goal,
                     injuries,
+                    medical_conditions,
+                    medications,
                     diet_preferences,
                     training_conditions,
                     activity_level
@@ -135,6 +163,8 @@ def create_user_profile(
                     :sex,
                     :goal,
                     :injuries,
+                    :medical_conditions,
+                    :medications,
                     :diet_preferences,
                     :training_conditions,
                     :activity_level
@@ -207,6 +237,8 @@ def update_user_profile(
                     sex = :sex,
                     goal = :goal,
                     injuries = :injuries,
+                    medical_conditions = :medical_conditions,
+                    medications = :medications,
                     diet_preferences = :diet_preferences,
                     training_conditions = :training_conditions,
                     activity_level = :activity_level,
@@ -278,6 +310,8 @@ def format_profile_for_prompt(profile_data: dict[str, Any]) -> dict[str, Any]:
                 f"- Goal: {data['goal']}",
                 f"- Activity level: {data['activity_level']}",
                 f"- Injuries or contraindications: {', '.join(data['injuries']) or 'none'}",
+                f"- Medical conditions: {', '.join(data['medical_conditions']) or 'none'}",
+                f"- Medications: {', '.join(data['medications']) or 'none'}",
                 f"- Diet preferences: {', '.join(data['diet_preferences']) or 'none'}",
                 f"- Training conditions: {', '.join(data['training_conditions']) or 'none'}",
             ]

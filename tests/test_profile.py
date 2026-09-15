@@ -25,6 +25,8 @@ def sample_profile(user_id="user-1"):
         "sex": "male",
         "goal": "fat_loss",
         "injuries": ["knee pain", "knee pain", " "],
+        "medical_conditions": ["hypertension", "hypertension", " "],
+        "medications": ["metformin", "metformin", " "],
         "diet_preferences": ["lactose intolerant"],
         "training_conditions": ["home", "dumbbell"],
         "activity_level": "moderate",
@@ -51,6 +53,8 @@ def test_create_and_get_user_profile(tmp_path):
     assert get_result["status"] == "success"
     assert get_result["data"]["user_id"] == "user-1"
     assert get_result["data"]["injuries"] == ["knee pain"]
+    assert get_result["data"]["medical_conditions"] == ["hypertension"]
+    assert get_result["data"]["medications"] == ["metformin"]
 
 
 def test_create_user_profile_rejects_invalid_input(tmp_path):
@@ -84,7 +88,13 @@ def test_update_user_profile_accepts_partial_patch(tmp_path):
     result = update_user_profile(
         database_path,
         "user-1",
-        {"weight_kg": 70, "goal": "maintenance", "injuries": ["ankle"]},
+        {
+            "weight_kg": 70,
+            "goal": "maintenance",
+            "injuries": ["ankle"],
+            "medical_conditions": ["gout"],
+            "medications": [],
+        },
     )
 
     assert_result_shape(result)
@@ -92,6 +102,8 @@ def test_update_user_profile_accepts_partial_patch(tmp_path):
     assert result["data"]["weight_kg"] == 70
     assert result["data"]["goal"] == "maintenance"
     assert result["data"]["injuries"] == ["ankle"]
+    assert result["data"]["medical_conditions"] == ["gout"]
+    assert result["data"]["medications"] == []
 
 
 def test_update_user_profile_rejects_invalid_patch(tmp_path):
@@ -157,6 +169,8 @@ def test_format_profile_for_prompt_returns_prompt_text():
     assert result["status"] == "success"
     assert "Current user profile:" in result["data"]["profile_text"]
     assert "knee pain" in result["data"]["profile_text"]
+    assert "hypertension" in result["data"]["profile_text"]
+    assert "metformin" in result["data"]["profile_text"]
     assert "lactose intolerant" in result["data"]["profile_text"]
 
 
@@ -166,3 +180,20 @@ def test_format_profile_for_prompt_rejects_invalid_profile():
     assert_result_shape(result)
     assert result["status"] == "error"
     assert result["data"] is None
+
+
+def test_profile_accepts_missing_medical_fields_for_backward_compatibility(tmp_path):
+    database_path = tmp_path / "profiles.db"
+    profile = sample_profile()
+    profile.pop("medical_conditions")
+    profile.pop("medications")
+
+    create_result = create_user_profile(database_path, profile)
+    get_result = get_user_profile(database_path, "user-1")
+
+    assert_result_shape(create_result)
+    assert_result_shape(get_result)
+    assert create_result["status"] == "success"
+    assert get_result["status"] == "success"
+    assert get_result["data"]["medical_conditions"] == []
+    assert get_result["data"]["medications"] == []

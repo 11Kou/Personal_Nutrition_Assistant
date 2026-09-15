@@ -12,6 +12,8 @@ class UserProfile(BaseModel):
     sex: Literal["male", "female", "other"]
     goal: Literal["muscle_gain", "fat_loss", "maintenance", "wellness"]
     injuries: list[str] = Field(default_factory=list)
+    medical_conditions: list[str] = Field(default_factory=list)
+    medications: list[str] = Field(default_factory=list)
     diet_preferences: list[str] = Field(default_factory=list)
     training_conditions: list[str] = Field(default_factory=list)
     activity_level: Literal[
@@ -30,7 +32,13 @@ class UserProfile(BaseModel):
             raise ValueError("user_id cannot be empty")
         return cleaned
 
-    @field_validator("injuries", "diet_preferences", "training_conditions")
+    @field_validator(
+        "injuries",
+        "medical_conditions",
+        "medications",
+        "diet_preferences",
+        "training_conditions",
+    )
     @classmethod
     def clean_text_list(cls, values: list[str]) -> list[str]:
         cleaned_values = []
@@ -51,6 +59,8 @@ class UserProfilePatch(BaseModel):
     sex: Literal["male", "female", "other"] | None = None
     goal: Literal["muscle_gain", "fat_loss", "maintenance", "wellness"] | None = None
     injuries: list[str] | None = None
+    medical_conditions: list[str] | None = None
+    medications: list[str] | None = None
     diet_preferences: list[str] | None = None
     training_conditions: list[str] | None = None
     activity_level: Literal[
@@ -61,7 +71,13 @@ class UserProfilePatch(BaseModel):
         "very_active",
     ] | None = None
 
-    @field_validator("injuries", "diet_preferences", "training_conditions")
+    @field_validator(
+        "injuries",
+        "medical_conditions",
+        "medications",
+        "diet_preferences",
+        "training_conditions",
+    )
     @classmethod
     def clean_optional_text_list(cls, values: list[str] | None) -> list[str] | None:
         if values is None:
