@@ -27,6 +27,8 @@ data/*
 !data/documents/
 !data/documents/curated_guides/
 !data/documents/curated_guides/*.md
+!data/documents/fitness_rehab/
+!data/documents/fitness_rehab/*.md
 documentsource/
 *.db
 *.sqlite
