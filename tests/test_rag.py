@@ -97,6 +97,10 @@ def test_generate_answer_with_sources_and_warning():
 
     assert_result_shape(result)
     assert result["status"] == "success"
+    assert "### 回答" in result["data"]["answer"]
+    assert "### 关键依据" in result["data"]["answer"]
+    assert "### 已结合用户画像" in result["data"]["answer"]
+    assert "### 来源" in result["data"]["answer"]
     assert "[1]" in result["data"]["answer"]
     assert len(result["data"]["sources"]) == 1
     assert result["data"]["sources"][0]["title"] == "膝关节康复指南"

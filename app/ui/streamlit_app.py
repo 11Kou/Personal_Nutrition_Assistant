@@ -249,15 +249,44 @@ def render_documents_page(settings: dict) -> None:
 def render_chat_page(settings: dict) -> None:
     st.header("问答")
     user_id = st.text_input("用户 ID", value="demo-user", key="chat_user_id")
-    question = st.text_area("问题", value="膝伤用户怎么做居家训练？")
     index_dir = st.text_input("索引目录", value=str(Path(settings["chroma_dir"]).parent / "index"), key="chat_index_dir")
     top_k = st.slider("来源数量", min_value=1, max_value=10, value=5)
     use_chroma = st.checkbox("使用 Chroma 检索", value=False, key="chat_use_chroma")
 
-    if st.button("提交问题"):
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+
+    if st.button("清空对话"):
+        st.session_state.chat_messages = []
+
+    for message in st.session_state.chat_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if message.get("sources"):
+                with st.expander("来源"):
+                    for source in message["sources"]:
+                        st.markdown(f"**[{source['index']}] {source['title']}**")
+                        st.caption(source["source"])
+                        st.markdown(source["snippet"])
+            if message.get("removed_chunks"):
+                with st.expander("已过滤内容"):
+                    st.json(message["removed_chunks"])
+
+    question = st.chat_input("输入你的问题")
+    if question:
+        st.session_state.chat_messages.append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.markdown(question)
+
         profile_result = load_profile_for_ui(settings["database_url"], user_id)
         if profile_result["status"] == "error":
-            st.error("请先在用户画像页保存画像。")
+            assistant_message = {
+                "role": "assistant",
+                "content": "请先在用户画像页保存画像。",
+            }
+            st.session_state.chat_messages.append(assistant_message)
+            with st.chat_message("assistant"):
+                st.error(assistant_message["content"])
             return
 
         result = ask_question_from_ui(
@@ -270,21 +299,33 @@ def render_chat_page(settings: dict) -> None:
             user_id=user_id,
         )
         if result["status"] == "error":
-            st.error(result["message"])
+            assistant_message = {
+                "role": "assistant",
+                "content": result["message"],
+            }
+            st.session_state.chat_messages.append(assistant_message)
+            with st.chat_message("assistant"):
+                st.error(assistant_message["content"])
             return
 
-        st.subheader("回答")
-        st.write(result["data"]["answer"])
-
-        st.subheader("来源")
-        for source in result["data"]["sources"]:
-            st.markdown(f"**[{source['index']}] {source['title']}**")
-            st.caption(source["source"])
-            st.write(source["snippet"])
-
-        if result["data"].get("removed_chunks"):
-            st.subheader("已过滤内容")
-            st.json(result["data"]["removed_chunks"])
+        assistant_message = {
+            "role": "assistant",
+            "content": result["data"]["answer"],
+            "sources": result["data"]["sources"],
+            "removed_chunks": result["data"].get("removed_chunks", []),
+        }
+        st.session_state.chat_messages.append(assistant_message)
+        with st.chat_message("assistant"):
+            st.markdown(assistant_message["content"])
+            if assistant_message["sources"]:
+                with st.expander("来源"):
+                    for source in assistant_message["sources"]:
+                        st.markdown(f"**[{source['index']}] {source['title']}**")
+                        st.caption(source["source"])
+                        st.markdown(source["snippet"])
+            if assistant_message["removed_chunks"]:
+                with st.expander("已过滤内容"):
+                    st.json(assistant_message["removed_chunks"])
 
 
 def main() -> None:

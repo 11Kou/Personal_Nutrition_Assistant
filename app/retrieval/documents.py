@@ -357,7 +357,8 @@ def _passes_filters(chunk: dict[str, Any], filters: dict[str, Any] | None) -> bo
                 return False
         if key.startswith("required_"):
             metadata_key = key.removeprefix("required_")
-            if not _overlaps(metadata, metadata_key, expected_values):
+            metadata_values = _metadata_values(metadata, metadata_key)
+            if metadata_values and not _overlaps(metadata, metadata_key, expected_values):
                 return False
 
     return True

@@ -144,6 +144,28 @@ def test_retrieve_documents_applies_metadata_filters(tmp_path):
     assert result["data"] == []
 
 
+def test_retrieve_documents_does_not_drop_untagged_chunks_for_required_filters(tmp_path):
+    document_dir = tmp_path / "docs"
+    index_dir = tmp_path / "index"
+    document_dir.mkdir()
+    (document_dir / "home.md").write_text(
+        "# 居家训练\n居家锻炼可以结合核心训练和低冲击有氧。",
+        encoding="utf-8",
+    )
+    ingest_documents([document_dir], index_dir=index_dir, use_chroma=False)
+
+    result = retrieve_documents(
+        "居家 锻炼",
+        index_dir=index_dir,
+        filters={"required_training_conditions": ["居家"]},
+        use_chroma=False,
+    )
+
+    assert_result_shape(result)
+    assert result["status"] == "success"
+    assert len(result["data"]) == 1
+
+
 def test_retrieve_documents_rejects_empty_query(tmp_path):
     result = retrieve_documents(" ", index_dir=tmp_path, use_chroma=False)
 

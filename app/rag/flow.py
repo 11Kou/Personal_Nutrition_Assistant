@@ -50,7 +50,16 @@ def _validate_chunk(chunk: dict[str, Any]) -> None:
 
 
 def _safe_snippet(content: str, max_chars: int = 180) -> str:
-    compact = re.sub(r"\s+", " ", str(content)).strip()
+    content = re.split(r"(?:^|\s)#{1,6}\s*RAG 使用提示|RAG 使用提示", str(content), maxsplit=1)[0]
+    clean_lines = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            continue
+        clean_lines.append(stripped.lstrip("- ").strip().replace("`", ""))
+    compact = re.sub(r"\s+", " ", " ".join(clean_lines)).strip()
     if len(compact) <= max_chars:
         return compact
     return compact[: max_chars - 3].rstrip() + "..."
@@ -112,6 +121,58 @@ def _format_sources(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return sources
+
+
+def _display_profile_value(value: Any) -> str:
+    labels = {
+        "fat_loss": "减脂",
+        "muscle_gain": "增肌",
+        "maintenance": "维持",
+        "wellness": "养生",
+        "male": "男",
+        "female": "女",
+    }
+    return labels.get(str(value), str(value))
+
+
+def _format_profile_summary(profile_data: dict[str, Any] | None) -> list[str]:
+    if not profile_data:
+        return []
+
+    labels = {
+        "goal": "目标",
+        "injuries": "伤病/禁忌",
+        "diet_preferences": "饮食偏好",
+        "training_conditions": "训练条件",
+    }
+    lines = []
+    for key, label in labels.items():
+        value = profile_data.get(key)
+        if isinstance(value, list):
+            value = [_display_profile_value(item).strip() for item in value if str(item).strip()]
+            if value:
+                lines.append(f"- {label}：{', '.join(value)}")
+        elif value:
+            lines.append(f"- {label}：{_display_profile_value(value)}")
+    return lines
+
+
+def _short_evidence(text: str, max_chars: int = 120) -> str:
+    compact = _safe_snippet(text, max_chars=180)
+    match = re.match(r"(.+?[。！？])", compact)
+    if match:
+        compact = match.group(1).strip()
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3].rstrip() + "..."
+
+
+def _format_source_bullets(sources: list[dict[str, Any]], max_items: int = 3) -> list[str]:
+    bullets = []
+    for source in sources[:max_items]:
+        snippet = _short_evidence(source["snippet"])
+        bullets.append(f"- {snippet} [{source['index']}]")
+    return bullets
 
 
 def _format_optional_evidence(name: str, items: Any) -> list[str]:
@@ -227,20 +288,27 @@ def generate_answer(
 
         sources = _format_sources(chunks)
         answer_lines = [
-            "根据本地知识库检索到的资料，可以参考以下信息：",
+            "### 回答",
+            "我在本地知识库找到了相关资料，下面是可引用的关键依据：",
+            "",
+            "### 关键依据",
         ]
-        for source in sources:
-            answer_lines.append(f"[{source['index']}] {source['snippet']}")
+        answer_lines.extend(_format_source_bullets(sources))
 
-        if profile_data:
-            hints = _profile_hints(profile_data)
-            if hints:
-                answer_lines.append(f"已结合用户画像：{'; '.join(hints)}。")
+        profile_lines = _format_profile_summary(profile_data)
+        if profile_lines:
+            answer_lines.extend(["", "### 已结合用户画像"])
+            answer_lines.extend(profile_lines)
 
+        if warnings:
+            answer_lines.extend(["", "### 注意"])
+            answer_lines.extend(warnings)
         answer_lines.extend(_format_optional_evidence("已注入计算结果", calculations))
         answer_lines.extend(_format_optional_evidence("已注入食物数据", foods))
-        if warnings:
-            answer_lines.extend(warnings)
+
+        answer_lines.extend(["", "### 来源"])
+        for source in sources:
+            answer_lines.append(f"- [{source['index']}] {source['title']}")
 
         return _success(
             {
