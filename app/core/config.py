@@ -27,7 +27,7 @@ class AppSettings(BaseSettings):
 
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str | None = Field(default=None, repr=False)
-    llm_model: str = "deepseek-chat"
+    llm_model: str = "deepseek-flash"
 
     embedding_model_name: str = "BAAI/bge-small-zh-v1.5"
     reranker_model_name: str = "BAAI/bge-reranker-base"

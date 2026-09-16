@@ -174,7 +174,7 @@ def bind_tools_to_model(model: Any, tools: list[Any]) -> dict[str, Any]:
 def create_deepseek_chat_model(
     api_key: str,
     base_url: str = "https://api.deepseek.com",
-    model_name: str = "deepseek-chat",
+    model_name: str = "deepseek-flash",
     temperature: float = 0,
 ) -> dict[str, Any]:
     """[Agent-Ready] Create a DeepSeek OpenAI-compatible LangChain chat model."""

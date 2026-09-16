@@ -9,6 +9,7 @@ from app.profile.storage import (
     list_user_profiles,
     update_user_profile,
 )
+from app.llm.deepseek import generate_deepseek_rag_answer
 from app.rag.flow import answer_question_with_rag
 from app.retrieval.documents import ingest_documents
 
@@ -67,6 +68,9 @@ def get_ui_settings(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
                 "documents_dir": settings["documents_dir"],
                 "chroma_dir": settings["chroma_dir"],
                 "food_csv_path": settings["food_csv_path"],
+                "llm_base_url": settings["llm_base_url"],
+                "llm_api_key": settings["llm_api_key"],
+                "llm_model": settings["llm_model"],
             },
             "UI settings loaded.",
         )
@@ -200,6 +204,10 @@ def ask_question_from_ui(
     index_dir: str | Path,
     top_k: int = 5,
     use_chroma: bool = False,
+    use_llm: bool = False,
+    llm_api_key: str | None = None,
+    llm_base_url: str = "https://api.deepseek.com",
+    llm_model: str = "deepseek-flash",
     database_url_or_path: str | Path | None = None,
     user_id: str | None = None,
 ) -> dict[str, Any]:
@@ -212,6 +220,25 @@ def ask_question_from_ui(
             top_k=top_k,
             use_chroma=use_chroma,
         )
+        if result["status"] == "success" and use_llm:
+            llm_result = generate_deepseek_rag_answer(
+                question=question,
+                profile_data=profile_data,
+                rag_data=result["data"],
+                api_key=llm_api_key or "",
+                base_url=llm_base_url,
+                model_name=llm_model,
+            )
+            if llm_result["status"] == "error":
+                return llm_result
+            result["data"]["rag_template_answer"] = result["data"]["answer"]
+            result["data"]["answer"] = llm_result["data"]["answer"]
+            result["data"]["llm"] = {
+                "used_llm": llm_result["data"]["used_llm"],
+                "model_name": llm_result["data"]["model_name"],
+            }
+            result["message"] = llm_result["message"]
+
         if (
             result["status"] == "success"
             and database_url_or_path is not None

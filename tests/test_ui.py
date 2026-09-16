@@ -59,6 +59,9 @@ def test_get_ui_settings_returns_required_paths(tmp_path):
             "documents_dir": tmp_path / "docs",
             "chroma_dir": tmp_path / "chroma",
             "food_csv_path": "data/food/foods.csv",
+            "llm_api_key": "test-key",
+            "llm_base_url": "https://api.deepseek.com",
+            "llm_model": "deepseek-flash",
         }
     )
 
@@ -69,6 +72,9 @@ def test_get_ui_settings_returns_required_paths(tmp_path):
         "documents_dir",
         "chroma_dir",
         "food_csv_path",
+        "llm_api_key",
+        "llm_base_url",
+        "llm_model",
     }
 
 
@@ -183,6 +189,49 @@ def test_ask_question_from_ui_returns_rag_answer(tmp_path):
     assert "固定自行车" in result["data"]["answer"]
     assert result["data"]["sources"]
     assert result["data"]["question_recorded"] is True
+
+
+def test_ask_question_from_ui_can_use_llm_answer(tmp_path, monkeypatch):
+    docs_dir = tmp_path / "docs"
+    index_dir = tmp_path / "index"
+    docs_dir.mkdir()
+    write_doc(docs_dir / "knee.md")
+    ingest_documents_from_ui([docs_dir], index_dir=index_dir, use_chroma=False)
+
+    def fake_generate_deepseek_rag_answer(**kwargs):
+        return {
+            "status": "success",
+            "data": {
+                "answer": "这是 DeepSeek Flash 生成的回答 [1]。",
+                "model_name": kwargs["model_name"],
+                "used_llm": True,
+            },
+            "message": "DeepSeek answer generated.",
+        }
+
+    monkeypatch.setattr(
+        "app.ui.actions.generate_deepseek_rag_answer",
+        fake_generate_deepseek_rag_answer,
+    )
+
+    result = ask_question_from_ui(
+        question="膝伤用户怎么训练？",
+        profile_data=sample_profile(),
+        index_dir=index_dir,
+        use_chroma=False,
+        use_llm=True,
+        llm_api_key="test-key",
+        llm_model="deepseek-flash",
+    )
+
+    assert_result_shape(result)
+    assert result["status"] == "success"
+    assert result["data"]["answer"] == "这是 DeepSeek Flash 生成的回答 [1]。"
+    assert "rag_template_answer" in result["data"]
+    assert result["data"]["llm"] == {
+        "used_llm": True,
+        "model_name": "deepseek-flash",
+    }
 
 
 def test_ask_question_from_ui_rejects_missing_index(tmp_path):

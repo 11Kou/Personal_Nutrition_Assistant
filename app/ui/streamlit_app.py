@@ -252,6 +252,7 @@ def render_chat_page(settings: dict) -> None:
     index_dir = st.text_input("索引目录", value=str(Path(settings["chroma_dir"]).parent / "index"), key="chat_index_dir")
     top_k = st.slider("来源数量", min_value=1, max_value=10, value=5)
     use_chroma = st.checkbox("使用 Chroma 检索", value=False, key="chat_use_chroma")
+    use_llm = st.checkbox("使用 DeepSeek Flash 生成回答（会消耗 API）", value=False, key="chat_use_llm")
 
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
@@ -295,6 +296,10 @@ def render_chat_page(settings: dict) -> None:
             index_dir=index_dir,
             top_k=top_k,
             use_chroma=use_chroma,
+            use_llm=use_llm,
+            llm_api_key=settings.get("llm_api_key"),
+            llm_base_url=settings.get("llm_base_url", "https://api.deepseek.com"),
+            llm_model=settings.get("llm_model", "deepseek-flash"),
             database_url_or_path=settings["database_url"],
             user_id=user_id,
         )
