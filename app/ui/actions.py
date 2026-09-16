@@ -48,10 +48,17 @@ def _ensure_question_history_schema(connection: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
             question TEXT NOT NULL,
+            answer TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(ui_question_history)").fetchall()
+    }
+    if "answer" not in columns:
+        connection.execute("ALTER TABLE ui_question_history ADD COLUMN answer TEXT")
     connection.commit()
 
 
@@ -105,15 +112,25 @@ def load_profile_for_ui(database_url_or_path: str, user_id: str) -> dict[str, An
         return _error(f"Failed to load profile for UI: {exc}")
 
 
+def list_profiles_for_ui(database_url_or_path: str | Path) -> dict[str, Any]:
+    """[Agent-Ready] List saved profiles for UI selection."""
+    try:
+        return list_user_profiles(database_url_or_path)
+    except Exception as exc:
+        return _error(f"Failed to list profiles for UI: {exc}")
+
+
 def record_question_from_ui(
     database_url_or_path: str | Path,
     user_id: str,
     question: str,
+    answer: str | None = None,
 ) -> dict[str, Any]:
-    """[Agent-Ready] Persist a question for the UI profile list."""
+    """[Agent-Ready] Persist a question and optional answer for recent conversations."""
     try:
         cleaned_user_id = str(user_id).strip()
         cleaned_question = str(question).strip()
+        cleaned_answer = str(answer).strip() if answer is not None else None
         if not cleaned_user_id:
             raise ValueError("user_id cannot be empty")
         if not cleaned_question:
@@ -121,18 +138,98 @@ def record_question_from_ui(
 
         with _connect(database_url_or_path) as connection:
             _ensure_question_history_schema(connection)
-            connection.execute(
-                "INSERT INTO ui_question_history (user_id, question) VALUES (?, ?)",
-                (cleaned_user_id, cleaned_question),
+            cursor = connection.execute(
+                "INSERT INTO ui_question_history (user_id, question, answer) VALUES (?, ?, ?)",
+                (cleaned_user_id, cleaned_question, cleaned_answer),
             )
             connection.commit()
 
         return _success(
-            {"user_id": cleaned_user_id, "question": cleaned_question},
+            {
+                "id": cursor.lastrowid,
+                "user_id": cleaned_user_id,
+                "question": cleaned_question,
+                "answer": cleaned_answer,
+            },
             "Question recorded.",
         )
     except Exception as exc:
         return _error(f"Failed to record question: {exc}")
+
+
+def list_recent_conversations(
+    database_url_or_path: str | Path,
+    limit: int = 20,
+    user_id: str | None = None,
+) -> dict[str, Any]:
+    """[Agent-Ready] List recent persisted conversations for review and deletion."""
+    try:
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+
+        cleaned_user_id = str(user_id).strip() if user_id is not None else ""
+        with _connect(database_url_or_path) as connection:
+            _ensure_question_history_schema(connection)
+            if cleaned_user_id:
+                rows = connection.execute(
+                    """
+                    SELECT id, user_id, question, answer, created_at
+                    FROM ui_question_history
+                    WHERE user_id = ?
+                    ORDER BY datetime(created_at) DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (cleaned_user_id, limit),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT id, user_id, question, answer, created_at
+                    FROM ui_question_history
+                    ORDER BY datetime(created_at) DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+
+        conversations = [
+            {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "question": row["question"],
+                "answer": row["answer"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+        return _success(conversations, "Recent conversations loaded.")
+    except Exception as exc:
+        return _error(f"Failed to list recent conversations: {exc}")
+
+
+def delete_recent_conversation(
+    database_url_or_path: str | Path,
+    conversation_id: int,
+) -> dict[str, Any]:
+    """[Agent-Ready] Delete one persisted recent conversation by ID."""
+    try:
+        if not isinstance(conversation_id, int) or conversation_id <= 0:
+            raise ValueError("conversation_id must be a positive integer")
+
+        with _connect(database_url_or_path) as connection:
+            _ensure_question_history_schema(connection)
+            cursor = connection.execute(
+                "DELETE FROM ui_question_history WHERE id = ?",
+                (conversation_id,),
+            )
+            connection.commit()
+
+        if cursor.rowcount == 0:
+            raise ValueError(f"Conversation not found: {conversation_id}")
+
+        return _success({"id": conversation_id}, "Conversation deleted.")
+    except Exception as exc:
+        return _error(f"Failed to delete recent conversation: {exc}")
 
 
 def list_profile_sidebar_items(
@@ -248,6 +345,7 @@ def ask_question_from_ui(
                 database_url_or_path,
                 user_id=user_id,
                 question=question,
+                answer=result["data"]["answer"],
             )
             if history_result["status"] == "success":
                 result["data"]["question_recorded"] = True

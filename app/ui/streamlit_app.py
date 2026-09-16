@@ -10,9 +10,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.nutrition.calculations import calculate_bmi
 from app.ui.actions import (
     ask_question_from_ui,
+    delete_recent_conversation,
     get_ui_settings,
     ingest_documents_from_ui,
-    list_profile_sidebar_items,
+    list_profiles_for_ui,
+    list_recent_conversations,
     load_profile_for_ui,
     save_profile_from_form,
 )
@@ -72,11 +74,37 @@ def _default_extra(existing_values: list[str] | None, options: list[str]) -> str
     return ", ".join(value for value in existing_values if value not in options)
 
 
+def _option_index(options: dict[str, str], value: str | None, default_index: int = 0) -> int:
+    values = list(options.values())
+    if value in values:
+        return values.index(value)
+    return default_index
+
+
+def _profile_ids(settings: dict) -> list[str]:
+    result = list_profiles_for_ui(settings["database_url"])
+    if result["status"] == "error":
+        return []
+    return [profile["user_id"] for profile in result["data"]]
+
+
 def _show_result(result: dict) -> None:
     if result["status"] == "success":
         st.success(result["message"])
     else:
         st.error(result["message"])
+
+
+def _print_app_url_once() -> None:
+    if st.session_state.get("_app_url_printed"):
+        return
+    print("Open the Streamlit app at: http://localhost:8501", flush=True)
+    st.session_state["_app_url_printed"] = True
+
+
+def _open_recent_conversation(conversation_id: int) -> None:
+    st.session_state["selected_conversation_id"] = conversation_id
+    st.session_state["page"] = "最近对话"
 
 
 def _settings() -> dict:
@@ -87,29 +115,41 @@ def _settings() -> dict:
     return result["data"]
 
 
-def render_profile_sidebar(settings: dict) -> None:
+def render_recent_sidebar(settings: dict) -> None:
     st.sidebar.divider()
-    st.sidebar.subheader("画像列表")
-    result = list_profile_sidebar_items(settings["database_url"])
+    st.sidebar.subheader("最近对话")
+    result = list_recent_conversations(settings["database_url"], limit=5)
     if result["status"] == "error":
         st.sidebar.caption(result["message"])
         return
     if not result["data"]:
-        st.sidebar.caption("暂无已保存画像")
+        st.sidebar.caption("暂无最近对话")
         return
 
-    for item in result["data"]:
-        with st.sidebar.expander(item["user_id"]):
-            if item["recent_questions"]:
-                for question in item["recent_questions"]:
-                    st.caption(question["question"])
-            else:
-                st.caption("暂无过往问题")
+    for conversation in result["data"]:
+        label = f"{conversation['user_id']}：{conversation['question'][:16]}"
+        st.sidebar.button(
+            label,
+            key=f"sidebar_conversation_{conversation['id']}",
+            on_click=_open_recent_conversation,
+            args=(conversation["id"],),
+        )
 
 
 def render_profile_page(settings: dict) -> None:
     st.header("用户画像")
-    user_id = st.text_input("用户 ID", value="demo-user")
+    profiles_result = list_profiles_for_ui(settings["database_url"])
+    profiles = profiles_result["data"] if profiles_result["status"] == "success" else []
+    profile_ids = [profile["user_id"] for profile in profiles]
+    if profile_ids:
+        selected_user = st.selectbox("用户 ID", [*profile_ids, "创建新用户"])
+        if selected_user == "创建新用户":
+            user_id = st.text_input("新用户 ID", value="", placeholder="例如：user2")
+        else:
+            user_id = selected_user
+    else:
+        st.info("还没有已保存的用户画像，请先创建一个。")
+        user_id = st.text_input("新用户 ID", value="demo-user")
 
     existing_profile = None
     if user_id:
@@ -159,9 +199,25 @@ def render_profile_page(settings: dict) -> None:
         value=int(existing_profile.get("age", 28) if existing_profile else 28),
         step=1,
     )
-    sex_label = st.selectbox("性别", list(SEX_OPTIONS.keys()))
-    goal_label = st.selectbox("目标", list(GOAL_OPTIONS.keys()))
-    activity_label = st.selectbox("活动水平", list(ACTIVITY_OPTIONS.keys()), index=2)
+    sex_label = st.selectbox(
+        "性别",
+        list(SEX_OPTIONS.keys()),
+        index=_option_index(SEX_OPTIONS, existing_profile.get("sex") if existing_profile else None),
+    )
+    goal_label = st.selectbox(
+        "目标",
+        list(GOAL_OPTIONS.keys()),
+        index=_option_index(GOAL_OPTIONS, existing_profile.get("goal") if existing_profile else None),
+    )
+    activity_label = st.selectbox(
+        "活动水平",
+        list(ACTIVITY_OPTIONS.keys()),
+        index=_option_index(
+            ACTIVITY_OPTIONS,
+            existing_profile.get("activity_level") if existing_profile else None,
+            default_index=2,
+        ),
+    )
     existing_injuries = existing_profile.get("injuries", []) if existing_profile else []
     existing_diet_preferences = existing_profile.get("diet_preferences", []) if existing_profile else []
     existing_training_conditions = existing_profile.get("training_conditions", []) if existing_profile else []
@@ -228,6 +284,25 @@ def render_profile_page(settings: dict) -> None:
         st.subheader("当前画像")
         st.json(existing_profile)
 
+    st.subheader("已创建用户画像")
+    if profiles:
+        st.dataframe(
+            [
+                {
+                    "用户 ID": profile["user_id"],
+                    "身高": profile.get("height_cm"),
+                    "体重": profile.get("weight_kg"),
+                    "目标": profile.get("goal"),
+                    "伤病禁忌": ", ".join(profile.get("injuries", [])),
+                }
+                for profile in profiles
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+    else:
+        st.caption("暂无已创建用户画像")
+
 
 def render_documents_page(settings: dict) -> None:
     st.header("资料库")
@@ -248,7 +323,11 @@ def render_documents_page(settings: dict) -> None:
 
 def render_chat_page(settings: dict) -> None:
     st.header("问答")
-    user_id = st.text_input("用户 ID", value="demo-user", key="chat_user_id")
+    profile_ids = _profile_ids(settings)
+    if not profile_ids:
+        st.warning("请先在用户画像页创建并保存一个用户画像。")
+        return
+    user_id = st.selectbox("用户 ID", profile_ids, key="chat_user_id")
     index_dir = st.text_input("索引目录", value=str(Path(settings["chroma_dir"]).parent / "index"), key="chat_index_dir")
     top_k = st.slider("来源数量", min_value=1, max_value=10, value=5)
     use_chroma = st.checkbox("使用 Chroma 检索", value=False, key="chat_use_chroma")
@@ -333,19 +412,56 @@ def render_chat_page(settings: dict) -> None:
                     st.json(assistant_message["removed_chunks"])
 
 
+def render_recent_conversations_page(settings: dict) -> None:
+    st.header("最近对话")
+    profile_ids = _profile_ids(settings)
+    filter_options = ["全部用户", *profile_ids]
+    selected_user = st.selectbox("筛选用户", filter_options)
+    user_id = None if selected_user == "全部用户" else selected_user
+    result = list_recent_conversations(settings["database_url"], limit=50, user_id=user_id)
+    if result["status"] == "error":
+        st.error(result["message"])
+        return
+    if not result["data"]:
+        st.caption("暂无最近对话")
+        return
+
+    selected_id = st.session_state.get("selected_conversation_id")
+    for conversation in result["data"]:
+        title = f"{conversation['user_id']} · {conversation['created_at']} · {conversation['question']}"
+        expanded = conversation["id"] == selected_id
+        with st.expander(title, expanded=expanded):
+            st.markdown("**问题**")
+            st.markdown(conversation["question"])
+            st.markdown("**回答**")
+            st.markdown(conversation["answer"] or "这条旧记录没有保存回答内容。")
+            if st.button("删除这条对话", key=f"delete_conversation_{conversation['id']}"):
+                delete_result = delete_recent_conversation(
+                    settings["database_url"],
+                    conversation["id"],
+                )
+                _show_result(delete_result)
+                if delete_result["status"] == "success":
+                    st.session_state.pop("selected_conversation_id", None)
+                    st.rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title="Personal Nutrition Assistant", layout="wide")
+    _print_app_url_once()
     st.title("Personal Nutrition Assistant")
     settings = _settings()
 
-    page = st.sidebar.radio("页面", ["用户画像", "资料库", "问答"])
-    render_profile_sidebar(settings)
+    page = st.sidebar.radio("页面", ["用户画像", "资料库", "问答", "最近对话"], key="page")
+    render_recent_sidebar(settings)
     if page == "用户画像":
         render_profile_page(settings)
     elif page == "资料库":
         render_documents_page(settings)
-    else:
+    elif page == "问答":
         render_chat_page(settings)
+    else:
+        render_recent_conversations_page(settings)
 
 
 if __name__ == "__main__":

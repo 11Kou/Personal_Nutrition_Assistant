@@ -1,8 +1,11 @@
 from app.ui.actions import (
     ask_question_from_ui,
+    delete_recent_conversation,
     get_ui_settings,
     ingest_documents_from_ui,
+    list_profiles_for_ui,
     list_profile_sidebar_items,
+    list_recent_conversations,
     load_profile_for_ui,
     record_question_from_ui,
     save_profile_from_form,
@@ -11,6 +14,7 @@ from app.ui.streamlit_app import (
     _default_extra,
     _default_selected,
     _merge_selected_and_extra,
+    _option_index,
 )
 
 
@@ -92,6 +96,11 @@ def test_default_selected_and_extra_split_known_options():
     assert _default_extra(existing_values, options) == "髋关节不适"
 
 
+def test_option_index_finds_existing_value():
+    assert _option_index({"男": "male", "女": "female"}, "female") == 1
+    assert _option_index({"男": "male", "女": "female"}, "other", default_index=0) == 0
+
+
 def test_save_profile_from_form_creates_and_updates_profile(tmp_path):
     database_path = tmp_path / "profiles.db"
 
@@ -128,6 +137,18 @@ def test_load_profile_for_ui_returns_saved_profile(tmp_path):
     assert result["data"]["user_id"] == "demo-user"
 
 
+def test_list_profiles_for_ui_returns_saved_profiles(tmp_path):
+    database_path = tmp_path / "profiles.db"
+    save_profile_from_form(str(database_path), sample_profile("user-a"))
+    save_profile_from_form(str(database_path), sample_profile("user-b"))
+
+    result = list_profiles_for_ui(str(database_path))
+
+    assert_result_shape(result)
+    assert result["status"] == "success"
+    assert [profile["user_id"] for profile in result["data"]] == ["user-a", "user-b"]
+
+
 def test_record_question_and_list_profile_sidebar_items(tmp_path):
     database_path = tmp_path / "profiles.db"
     save_profile_from_form(str(database_path), sample_profile("user-a"))
@@ -145,6 +166,43 @@ def test_record_question_and_list_profile_sidebar_items(tmp_path):
         "膝伤怎么训练？",
     ]
     assert item_by_user["user-b"]["recent_questions"] == []
+
+
+def test_list_and_delete_recent_conversations(tmp_path):
+    database_path = tmp_path / "profiles.db"
+    record_result = record_question_from_ui(
+        str(database_path),
+        "user-a",
+        "膝伤怎么训练？",
+        answer="选择固定自行车 [1]。",
+    )
+
+    list_result = list_recent_conversations(str(database_path), limit=5)
+
+    assert_result_shape(record_result)
+    assert_result_shape(list_result)
+    assert record_result["status"] == "success"
+    assert list_result["status"] == "success"
+    assert list_result["data"][0]["question"] == "膝伤怎么训练？"
+    assert list_result["data"][0]["answer"] == "选择固定自行车 [1]。"
+
+    delete_result = delete_recent_conversation(
+        str(database_path),
+        list_result["data"][0]["id"],
+    )
+    after_delete = list_recent_conversations(str(database_path), limit=5)
+
+    assert_result_shape(delete_result)
+    assert delete_result["status"] == "success"
+    assert after_delete["data"] == []
+
+
+def test_delete_recent_conversation_rejects_missing_id(tmp_path):
+    result = delete_recent_conversation(str(tmp_path / "profiles.db"), 999)
+
+    assert_result_shape(result)
+    assert result["status"] == "error"
+    assert result["data"] is None
 
 
 def test_record_question_from_ui_rejects_empty_question(tmp_path):
