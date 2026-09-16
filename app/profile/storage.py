@@ -297,6 +297,11 @@ def format_profile_for_prompt(profile_data: dict[str, Any]) -> dict[str, Any]:
     try:
         profile = UserProfile.model_validate(profile_data)
         data = profile.model_dump()
+        body_fat_text = (
+            f"{data['body_fat_percent']}%"
+            if data["body_fat_percent"] is not None
+            else "not provided; do not infer or use body fat percentage"
+        )
 
         profile_text = "\n".join(
             [
@@ -306,7 +311,7 @@ def format_profile_for_prompt(profile_data: dict[str, Any]) -> dict[str, Any]:
                 f"- Sex: {data['sex']}",
                 f"- Height: {data['height_cm']} cm",
                 f"- Weight: {data['weight_kg']} kg",
-                f"- Body fat percent: {data['body_fat_percent']}",
+                f"- Body fat percent: {body_fat_text}",
                 f"- Goal: {data['goal']}",
                 f"- Activity level: {data['activity_level']}",
                 f"- Injuries or contraindications: {', '.join(data['injuries']) or 'none'}",

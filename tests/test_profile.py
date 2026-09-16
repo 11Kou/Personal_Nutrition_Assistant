@@ -174,6 +174,17 @@ def test_format_profile_for_prompt_returns_prompt_text():
     assert "lactose intolerant" in result["data"]["profile_text"]
 
 
+def test_format_profile_for_prompt_does_not_infer_missing_body_fat():
+    profile = sample_profile()
+    profile["body_fat_percent"] = None
+
+    result = format_profile_for_prompt(profile)
+
+    assert_result_shape(result)
+    assert result["status"] == "success"
+    assert "not provided; do not infer or use body fat percentage" in result["data"]["profile_text"]
+
+
 def test_format_profile_for_prompt_rejects_invalid_profile():
     result = format_profile_for_prompt({"user_id": ""})
 

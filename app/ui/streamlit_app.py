@@ -12,6 +12,7 @@ from app.ui.actions import (
     ask_question_from_ui,
     get_ui_settings,
     ingest_documents_from_ui,
+    list_profile_sidebar_items,
     load_profile_for_ui,
     save_profile_from_form,
 )
@@ -38,9 +39,37 @@ ACTIVITY_OPTIONS = {
     "非常活跃": "very_active",
 }
 
+INJURY_OPTIONS = ["膝伤", "肩伤", "腰痛", "背伤", "踝伤", "手腕伤", "无"]
+DIET_OPTIONS = ["乳糖不耐", "素食", "纯素", "不吃猪肉", "不吃牛肉", "海鲜过敏", "坚果过敏", "无"]
+TRAINING_OPTIONS = ["居家", "健身房", "无器械", "哑铃", "杠铃", "弹力带", "跑步机", "固定自行车"]
+
 
 def _split_tags(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _merge_selected_and_extra(selected: list[str], extra: str) -> list[str]:
+    values = [item for item in selected if item != "无"]
+    values.extend(_split_tags(extra))
+    merged = []
+    seen = set()
+    for value in values:
+        if value and value not in seen:
+            merged.append(value)
+            seen.add(value)
+    return merged
+
+
+def _default_selected(existing_values: list[str] | None, options: list[str]) -> list[str]:
+    if not existing_values:
+        return []
+    return [value for value in existing_values if value in options]
+
+
+def _default_extra(existing_values: list[str] | None, options: list[str]) -> str:
+    if not existing_values:
+        return ""
+    return ", ".join(value for value in existing_values if value not in options)
 
 
 def _show_result(result: dict) -> None:
@@ -58,6 +87,26 @@ def _settings() -> dict:
     return result["data"]
 
 
+def render_profile_sidebar(settings: dict) -> None:
+    st.sidebar.divider()
+    st.sidebar.subheader("画像列表")
+    result = list_profile_sidebar_items(settings["database_url"])
+    if result["status"] == "error":
+        st.sidebar.caption(result["message"])
+        return
+    if not result["data"]:
+        st.sidebar.caption("暂无已保存画像")
+        return
+
+    for item in result["data"]:
+        with st.sidebar.expander(item["user_id"]):
+            if item["recent_questions"]:
+                for question in item["recent_questions"]:
+                    st.caption(question["question"])
+            else:
+                st.caption("暂无过往问题")
+
+
 def render_profile_page(settings: dict) -> None:
     st.header("用户画像")
     user_id = st.text_input("用户 ID", value="demo-user")
@@ -68,48 +117,93 @@ def render_profile_page(settings: dict) -> None:
         if profile_result["status"] == "success":
             existing_profile = profile_result["data"]
 
-    with st.form("profile_form"):
-        height_cm = st.number_input(
-            "身高 cm",
-            min_value=1.0,
-            max_value=300.0,
-            value=float(existing_profile.get("height_cm", 175) if existing_profile else 175),
-        )
-        weight_kg = st.number_input(
-            "体重 kg",
-            min_value=1.0,
-            max_value=500.0,
-            value=float(existing_profile.get("weight_kg", 70) if existing_profile else 70),
-        )
-        bmi_result = calculate_bmi({"height_cm": height_cm, "weight_kg": weight_kg})
-        if bmi_result["status"] == "success":
-            bmi_data = bmi_result["data"]
-            st.metric("BMI 自动计算", f"{bmi_data['result']} {bmi_data['unit']}")
-            st.caption(f"公式：{bmi_data['formula']}")
+    height_cm = st.number_input(
+        "身高 cm",
+        min_value=1.0,
+        max_value=300.0,
+        value=float(existing_profile.get("height_cm", 175) if existing_profile else 175),
+        step=0.5,
+        format="%.1f",
+    )
+    weight_kg = st.number_input(
+        "体重 kg",
+        min_value=1.0,
+        max_value=500.0,
+        value=float(existing_profile.get("weight_kg", 70) if existing_profile else 70),
+        step=0.5,
+        format="%.1f",
+    )
+    bmi_result = calculate_bmi({"height_cm": height_cm, "weight_kg": weight_kg})
+    if bmi_result["status"] == "success":
+        bmi_data = bmi_result["data"]
+        st.metric("BMI 自动计算", f"{bmi_data['result']} {bmi_data['unit']}")
+        st.caption(f"公式：{bmi_data['formula']}")
 
-        existing_body_fat = existing_profile.get("body_fat_percent") if existing_profile else None
-        knows_body_fat = st.checkbox("我知道体脂率", value=existing_body_fat is not None)
-        body_fat_percent = None
-        if knows_body_fat:
-            body_fat_percent = st.number_input(
-                "体脂率 %",
-                min_value=0.0,
-                max_value=80.0,
-                value=float(existing_body_fat if existing_body_fat is not None else 18),
-            )
-        age = st.number_input(
-            "年龄",
-            min_value=1,
-            max_value=120,
-            value=int(existing_profile.get("age", 28) if existing_profile else 28),
+    existing_body_fat = existing_profile.get("body_fat_percent") if existing_profile else None
+    knows_body_fat = st.checkbox("添加体脂率", value=existing_body_fat is not None)
+    st.caption("不添加时不会使用默认体脂率，也不会把体脂率纳入后续计算或回答。")
+    body_fat_percent = None
+    if knows_body_fat:
+        body_fat_percent = st.number_input(
+            "体脂率 %",
+            min_value=0.0,
+            max_value=80.0,
+            value=float(existing_body_fat if existing_body_fat is not None else 18),
+            step=0.5,
+            format="%.1f",
         )
-        sex_label = st.selectbox("性别", list(SEX_OPTIONS.keys()))
-        goal_label = st.selectbox("目标", list(GOAL_OPTIONS.keys()))
-        activity_label = st.selectbox("活动水平", list(ACTIVITY_OPTIONS.keys()), index=2)
-        injuries = st.text_input("伤病禁忌，用英文逗号分隔", value="膝伤")
-        diet_preferences = st.text_input("饮食偏好，用英文逗号分隔", value="乳糖不耐")
-        training_conditions = st.text_input("训练条件，用英文逗号分隔", value="居家, 哑铃")
-        submitted = st.form_submit_button("保存画像")
+    age = st.number_input(
+        "年龄",
+        min_value=1,
+        max_value=120,
+        value=int(existing_profile.get("age", 28) if existing_profile else 28),
+        step=1,
+    )
+    sex_label = st.selectbox("性别", list(SEX_OPTIONS.keys()))
+    goal_label = st.selectbox("目标", list(GOAL_OPTIONS.keys()))
+    activity_label = st.selectbox("活动水平", list(ACTIVITY_OPTIONS.keys()), index=2)
+    existing_injuries = existing_profile.get("injuries", []) if existing_profile else []
+    existing_diet_preferences = existing_profile.get("diet_preferences", []) if existing_profile else []
+    existing_training_conditions = existing_profile.get("training_conditions", []) if existing_profile else []
+
+    injury_tab, diet_tab, training_tab = st.tabs(["伤病禁忌", "饮食偏好", "训练条件"])
+    with injury_tab:
+        injury_selected = st.multiselect(
+            "选择伤病禁忌",
+            INJURY_OPTIONS,
+            default=_default_selected(existing_injuries, INJURY_OPTIONS),
+        )
+        injury_extra = st.text_input(
+            "情况补充",
+            value=_default_extra(existing_injuries, INJURY_OPTIONS),
+            placeholder="例如：髋关节不适、颈椎不适",
+            key="injury_extra",
+        )
+    with diet_tab:
+        diet_selected = st.multiselect(
+            "选择饮食偏好",
+            DIET_OPTIONS,
+            default=_default_selected(existing_diet_preferences, DIET_OPTIONS),
+        )
+        diet_extra = st.text_input(
+            "情况补充",
+            value=_default_extra(existing_diet_preferences, DIET_OPTIONS),
+            placeholder="例如：不吃辣、控糖",
+            key="diet_extra",
+        )
+    with training_tab:
+        training_selected = st.multiselect(
+            "选择训练条件",
+            TRAINING_OPTIONS,
+            default=_default_selected(existing_training_conditions, TRAINING_OPTIONS),
+        )
+        training_extra = st.text_input(
+            "情况补充",
+            value=_default_extra(existing_training_conditions, TRAINING_OPTIONS),
+            placeholder="例如：小区健身器械、每次30分钟",
+            key="training_extra",
+        )
+    submitted = st.button("保存画像")
 
     if submitted:
         result = save_profile_from_form(
@@ -122,9 +216,9 @@ def render_profile_page(settings: dict) -> None:
                 "age": age,
                 "sex": SEX_OPTIONS[sex_label],
                 "goal": GOAL_OPTIONS[goal_label],
-                "injuries": _split_tags(injuries),
-                "diet_preferences": _split_tags(diet_preferences),
-                "training_conditions": _split_tags(training_conditions),
+                "injuries": _merge_selected_and_extra(injury_selected, injury_extra),
+                "diet_preferences": _merge_selected_and_extra(diet_selected, diet_extra),
+                "training_conditions": _merge_selected_and_extra(training_selected, training_extra),
                 "activity_level": ACTIVITY_OPTIONS[activity_label],
             },
         )
@@ -172,6 +266,8 @@ def render_chat_page(settings: dict) -> None:
             index_dir=index_dir,
             top_k=top_k,
             use_chroma=use_chroma,
+            database_url_or_path=settings["database_url"],
+            user_id=user_id,
         )
         if result["status"] == "error":
             st.error(result["message"])
@@ -197,6 +293,7 @@ def main() -> None:
     settings = _settings()
 
     page = st.sidebar.radio("页面", ["用户画像", "资料库", "问答"])
+    render_profile_sidebar(settings)
     if page == "用户画像":
         render_profile_page(settings)
     elif page == "资料库":
