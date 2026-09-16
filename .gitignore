@@ -38,6 +38,7 @@ documentsource/
 data/chroma/
 data/uploads/
 data/runtime/
+tmp/
 chroma/
 *.index
 *.faiss
