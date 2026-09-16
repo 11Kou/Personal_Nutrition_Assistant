@@ -1,4 +1,5 @@
 from app.nutrition.calculations import (
+    calculate_bmi,
     calculate_bmr,
     calculate_macro_targets,
     calculate_tdee,
@@ -35,6 +36,27 @@ def test_calculate_bmr_for_male_profile():
     assert result["data"]["result"] == 1679
     assert result["data"]["unit"] == "kcal/day"
     assert "Mifflin-St Jeor" in result["data"]["formula"]
+
+
+def test_calculate_bmi_from_height_and_weight():
+    result = calculate_bmi(sample_profile())
+
+    assert_result_shape(result)
+    assert result["status"] == "success"
+    assert result["data"]["result"] == 23.5
+    assert result["data"]["unit"] == "kg/m^2"
+    assert result["data"]["category"] == "normal"
+
+
+def test_calculate_bmi_rejects_invalid_input():
+    profile = sample_profile()
+    profile["height_cm"] = 0
+
+    result = calculate_bmi(profile)
+
+    assert_result_shape(result)
+    assert result["status"] == "error"
+    assert result["data"] is None
 
 
 def test_calculate_bmr_for_female_profile():

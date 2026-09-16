@@ -95,6 +95,45 @@ def _parse_profile_for_calculation(profile_data: dict[str, Any]) -> dict[str, An
     }
 
 
+def calculate_bmi(profile_data: dict[str, Any]) -> dict[str, Any]:
+    """[Agent-Ready] Calculate BMI from height and weight."""
+    try:
+        if not isinstance(profile_data, dict):
+            raise TypeError("profile_data must be a dictionary")
+
+        height_cm = _required_number(profile_data, "height_cm")
+        weight_kg = _required_number(profile_data, "weight_kg")
+        height_m = height_cm / 100
+        bmi = round(weight_kg / (height_m * height_m), 1)
+
+        if bmi < 18.5:
+            category = "underweight"
+        elif bmi < 24:
+            category = "normal"
+        elif bmi < 28:
+            category = "overweight"
+        else:
+            category = "obesity"
+
+        return _success(
+            {
+                "name": "BMI",
+                "formula": "BMI = weight_kg / (height_m ** 2)",
+                "inputs": {
+                    "height_cm": height_cm,
+                    "height_m": round(height_m, 3),
+                    "weight_kg": weight_kg,
+                },
+                "result": bmi,
+                "unit": "kg/m^2",
+                "category": category,
+            },
+            "BMI calculated.",
+        )
+    except Exception as exc:
+        return _error(f"Failed to calculate BMI: {exc}")
+
+
 def calculate_bmr(profile_data: dict[str, Any]) -> dict[str, Any]:
     """[Agent-Ready] Calculate BMR with the Mifflin-St Jeor equation."""
     try:

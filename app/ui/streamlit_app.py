@@ -1,7 +1,13 @@
 from pathlib import Path
+import sys
 
 import streamlit as st
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.nutrition.calculations import calculate_bmi
 from app.ui.actions import (
     ask_question_from_ui,
     get_ui_settings,
@@ -75,12 +81,22 @@ def render_profile_page(settings: dict) -> None:
             max_value=500.0,
             value=float(existing_profile.get("weight_kg", 70) if existing_profile else 70),
         )
-        body_fat_percent = st.number_input(
-            "体脂率 %",
-            min_value=0.0,
-            max_value=80.0,
-            value=float(existing_profile.get("body_fat_percent", 18) if existing_profile else 18),
-        )
+        bmi_result = calculate_bmi({"height_cm": height_cm, "weight_kg": weight_kg})
+        if bmi_result["status"] == "success":
+            bmi_data = bmi_result["data"]
+            st.metric("BMI 自动计算", f"{bmi_data['result']} {bmi_data['unit']}")
+            st.caption(f"公式：{bmi_data['formula']}")
+
+        existing_body_fat = existing_profile.get("body_fat_percent") if existing_profile else None
+        knows_body_fat = st.checkbox("我知道体脂率", value=existing_body_fat is not None)
+        body_fat_percent = None
+        if knows_body_fat:
+            body_fat_percent = st.number_input(
+                "体脂率 %",
+                min_value=0.0,
+                max_value=80.0,
+                value=float(existing_body_fat if existing_body_fat is not None else 18),
+            )
         age = st.number_input(
             "年龄",
             min_value=1,
